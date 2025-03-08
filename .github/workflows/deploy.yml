@@ -1,0 +1,25 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{171.22.27.98:6886}}
+          username: ${{root}}
+          key: ${{Ashid6671?}}
+          script: |
+            cd /home/ashidme/domains/ashid.ir/public_html/ai
+            git pull origin main
+            # اگر نیاز به نصب dependency دارید:
+            # npm install
+            # یا دستورات دیگر که نیاز دارید 
