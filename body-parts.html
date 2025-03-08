@@ -97,7 +97,7 @@
                 مرورگر شما از پخش ویدیو پشتیبانی نمی‌کند.
             </video>
             <video id="video" autoplay></video>
-            <div id="result">برای شروع بازی دکمه زیر را بزن</div>
+            <div id="result">برای شروع بازی دکمه زیر را بزن یا بگو "آشید شروع کن"</div>
             <button id="start-button" class="start-button" onclick="startGame()">شروع بازی</button>
             <div id="control-buttons" class="button-container hidden">
                 <button class="game-button restart-button" onclick="startGame()">شروع مجدد</button>
@@ -196,6 +196,108 @@
 
         camera.start();
 
+        // راه‌اندازی تشخیص صدا
+        let recognition;
+        let isRecognitionActive = false;
+
+        function startSpeechRecognition() {
+            if (!('webkitSpeechRecognition' in window)) {
+                console.warn('مرورگر شما از تشخیص صدا پشتیبانی نمی‌کند');
+                return;
+            }
+
+            if (isRecognitionActive) return;
+
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = false;
+            recognition.lang = 'fa-IR';
+
+            recognition.onstart = function() {
+                isRecognitionActive = true;
+                console.log('تشخیص صدا فعال شد');
+                updateMicrophoneStatus(true);
+            };
+
+            recognition.onresult = function(event) {
+                const last = event.results.length - 1;
+                const command = event.results[last][0].transcript.trim().toLowerCase();
+                console.log('دستور شنیده شده:', command);
+                
+                if (command.includes('آشید شروع کن') || 
+                    command.includes('اشید شروع کن') || 
+                    command.includes('آشید شروع') || 
+                    command.includes('آرشید شروع') ||
+                    command.includes('آشیت شروع') ||
+                    command.includes('هی شروع') ||
+                    command.includes('شروع کن') ||
+                    command.includes('با توام شروع کن')) {
+                    startGame();
+                }
+            };
+
+            recognition.onerror = function(event) {
+                console.error('خطا در تشخیص صدا:', event.error);
+                if (event.error !== 'no-speech') {
+                    restartSpeechRecognition();
+                }
+                updateMicrophoneStatus(false);
+            };
+
+            recognition.onend = function() {
+                isRecognitionActive = false;
+                console.log('تشخیص صدا قطع شد، در حال شروع مجدد...');
+                updateMicrophoneStatus(false);
+                restartSpeechRecognition();
+            };
+
+            try {
+                recognition.start();
+            } catch (error) {
+                console.error('خطا در شروع تشخیص صدا:', error);
+                updateMicrophoneStatus(false);
+            }
+        }
+
+        function restartSpeechRecognition() {
+            if (recognition) {
+                setTimeout(() => {
+                    try {
+                        recognition.start();
+                    } catch (error) {
+                        console.error('خطا در شروع مجدد تشخیص صدا:', error);
+                        updateMicrophoneStatus(false);
+                    }
+                }, 1000);
+            }
+        }
+
+        function updateMicrophoneStatus(isActive) {
+            const micStatusText = isActive ? '🎤 میکروفون فعال' : '🎤 میکروفون غیرفعال';
+            const micStatusColor = isActive ? '#4CAF50' : '#f44336';
+            
+            let micStatus = document.getElementById('mic-status');
+            if (!micStatus) {
+                micStatus = document.createElement('div');
+                micStatus.id = 'mic-status';
+                micStatus.style.position = 'fixed';
+                micStatus.style.top = '10px';
+                micStatus.style.left = '10px';
+                micStatus.style.padding = '5px 10px';
+                micStatus.style.borderRadius = '5px';
+                micStatus.style.fontSize = '14px';
+                micStatus.style.zIndex = '1000';
+                document.body.appendChild(micStatus);
+            }
+            
+            micStatus.textContent = micStatusText;
+            micStatus.style.backgroundColor = micStatusColor;
+            micStatus.style.color = 'white';
+        }
+
+        // شروع تشخیص صدا
+        startSpeechRecognition();
+
         function onResults(results) {
             lastResults = results;
             if (!isGameActive || !isStopPhase) return;
@@ -246,7 +348,7 @@
             isGameActive = true;
             isStopPhase = false;
             lastPosePositions = [];
-            resultElement.textContent = "آماده باش...";
+            resultElement.textContent = "Ready...";
             
             // پخش صدای شروع
             await playAudioSafely(startAudio);
@@ -306,7 +408,7 @@
             demoVideo.style.display = 'none';
             demoImage.style.display = 'block';
             
-            resultElement.textContent = "بازی متوقف شد. برای شروع مجدد دکمه سبز را بزنید";
+            resultElement.textContent = "بازی متوقف شد. برای شروع مجدد دکمه سبز را بزنید یا بگو آشید شروع کن";
             
             // توقف تمام صداها
             [startAudio, jumpAudio, stopAudio, successAudio, failAudio].forEach(audio => {
@@ -336,6 +438,9 @@
         window.addEventListener('beforeunload', () => {
             camera.stop();
             demoVideo.pause();
+            if (recognition) {
+                recognition.stop();
+            }
             // توقف تمام صداها
             [startAudio, jumpAudio, stopAudio, successAudio, failAudio].forEach(audio => {
                 if (audio) audio.pause();
