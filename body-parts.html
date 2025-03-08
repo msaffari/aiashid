@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>شروع / استوپ</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <style>
+        .button-container {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        .game-button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: 'IRANYekan', 'Tahoma', sans-serif;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        #demo-image, #demo-video {
+            width: 250px;
+            height: 250px;
+            object-fit: contain;
+        }
+
+        .restart-button {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .stop-button {
+            background-color: #f44336;
+            color: white;
+        }
+
+        .game-button:hover {
+            opacity: 0.9;
+            transform: scale(1.05);
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: #FFD93D;
+            padding: 15px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            border-radius: 30px 30px 0 0;
+        }
+
+        .nav-item {
+            color: #000000;
+            text-decoration: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .nav-item i {
+            font-size: 24px;
+        }
+
+        .nav-item span {
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="index.html" class="back-button" title="بازگشت">←</a>
+        <h1>شروع / استوپ</h1>
+        <div class="header-spacer"></div>
+    </div>
+
+    <div class="container">
+        <div class="game-box">
+            <img id="demo-image" src="assets/demo.jpg" class="demo-video" alt="تصویر راهنمای بازی">
+            <video id="demo-video" autoplay loop muted style="display: none;">
+                <source src="assets/demo.mp4" type="video/mp4">
+                مرورگر شما از پخش ویدیو پشتیبانی نمی‌کند.
+            </video>
+            <video id="video" autoplay></video>
+            <div id="result">برای شروع بازی دکمه زیر را بزن</div>
+            <button id="start-button" class="start-button" onclick="startGame()">شروع بازی</button>
+            <div id="control-buttons" class="button-container hidden">
+                <button class="game-button restart-button" onclick="startGame()">شروع مجدد</button>
+                <button class="game-button stop-button" onclick="stopGame()">توقف بازی</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="bottom-nav">
+        <a href="https://ashid.ir/" class="nav-item">
+            <i class="fas fa-home"></i>
+            <span>خانه</span>
+        </a>
+
+        <a href="https://ashid.ir/profile" class="nav-item">
+            <i class="fas fa-user"></i>
+            <span>پروفایل</span>
+        </a>
+
+        <a href="https://ashid.ir/reports" class="nav-item">
+            <i class="fas fa-chart-line"></i>
+            <span>گزارش‌ها</span>
+        </a>
+    </div>
+
+    <audio id="start-audio" src="assets/start.mp3" preload="auto"></audio>
+    <audio id="jump-audio" src="assets/jump.mp3" preload="auto"></audio>
+    <audio id="stop-audio" src="assets/stop.mp3" preload="auto"></audio>
+    <audio id="success-audio" src="assets/success.mp3" preload="auto"></audio>
+    <audio id="fail-audio" src="assets/fail.mp3" preload="auto"></audio>
+
+    <script>
+        // غیرفعال کردن پیام‌های دیباگ
+        const oldConsoleLog = console.log;
+        console.log = function() {
+            if (arguments[0]?.includes?.('Successfully created a WebGL context') ||
+                arguments[0]?.includes?.('GL version') ||
+                arguments[0]?.includes?.('OpenGL error checking')) {
+                return;
+            }
+            oldConsoleLog.apply(console, arguments);
+        };
+
+        const videoElement = document.getElementById('video');
+        const demoVideo = document.getElementById('demo-video');
+        const demoImage = document.getElementById('demo-image');
+        const resultElement = document.getElementById('result');
+        const startAudio = document.getElementById('start-audio');
+        const jumpAudio = document.getElementById('jump-audio');
+        const stopAudio = document.getElementById('stop-audio');
+        const successAudio = document.getElementById('success-audio');
+        const failAudio = document.getElementById('fail-audio');
+
+        // تابع برای پخش صدا با در نظر گرفتن خطاها
+        async function playAudioSafely(audioElement) {
+            try {
+                if (audioElement) {
+                    await audioElement.play();
+                    return new Promise(resolve => {
+                        audioElement.onended = resolve;
+                    });
+                }
+            } catch (error) {
+                console.log('خطا در پخش صدا:', error);
+            }
+        }
+
+        let isGameActive = false;
+        let isStopPhase = false;
+        let lastPosePositions = [];
+        let gameTimeout;
+        let lastResults = null;
+
+        const pose = new Pose({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+            }
+        });
+
+        pose.setOptions({
+            modelComplexity: 0,
+            smoothLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        pose.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await pose.send({image: videoElement});
+            },
+            width: 333,
+            height: 250
+        });
+
+        camera.start();
+
+        function onResults(results) {
+            lastResults = results;
+            if (!isGameActive || !isStopPhase) return;
+
+            if (results.poseLandmarks) {
+                const keyPoints = [
+                    results.poseLandmarks[11], // شانه راست
+                    results.poseLandmarks[12], // شانه چپ
+                    results.poseLandmarks[23], // لگن راست
+                    results.poseLandmarks[24], // لگن چپ
+                ];
+
+                checkMovement(keyPoints);
+            }
+        }
+
+        function checkMovement(currentPoints) {
+            if (lastPosePositions.length === 0) return;
+
+            let totalMovement = 0;
+            for (let i = 0; i < currentPoints.length; i++) {
+                const dx = currentPoints[i].x - lastPosePositions[i].x;
+                const dy = currentPoints[i].y - lastPosePositions[i].y;
+                totalMovement += Math.sqrt(dx * dx + dy * dy);
+            }
+
+            if (totalMovement > 0.05) {
+                gameOver(false);
+            }
+        }
+
+        async function startGame() {
+            // توقف تمام صداها قبل از شروع بازی جدید
+            [startAudio, jumpAudio, stopAudio, successAudio, failAudio].forEach(audio => {
+                if (audio) {
+                    audio.pause();
+                    audio.currentTime = 0;
+                }
+            });
+
+            // پاکسازی تایمرهای قبلی
+            clearTimeout(gameTimeout);
+            
+            // نمایش دکمه‌های کنترل و مخفی کردن دکمه شروع
+            document.getElementById('start-button').classList.add('hidden');
+            document.getElementById('control-buttons').classList.remove('hidden');
+
+            isGameActive = true;
+            isStopPhase = false;
+            lastPosePositions = [];
+            resultElement.textContent = "آماده باش...";
+            
+            // پخش صدای شروع
+            await playAudioSafely(startAudio);
+            
+            // نمایش ویدیو
+            demoImage.style.display = 'none';
+            demoVideo.style.display = 'block';
+            demoVideo.play();
+            
+            // شروع بازی
+            resultElement.textContent = "حالا بالا پایین بپر!";
+            await playAudioSafely(jumpAudio);
+            
+            // زمان تصادفی برای استوپ
+            const stopTime = 2000 + Math.random() * 5000;
+            
+            gameTimeout = setTimeout(async () => {
+                resultElement.textContent = "استوپ!";
+                
+                // نمایش تصویر استوپ
+                demoVideo.style.display = 'none';
+                demoImage.style.display = 'block';
+                
+                // پخش صدای استوپ
+                await playAudioSafely(stopAudio);
+                
+                // ذخیره موقعیت اولیه و شروع فاز استوپ بعد از 1 ثانیه
+                setTimeout(() => {
+                    if (isGameActive) {
+                        isStopPhase = true;
+                        if (lastResults && lastResults.poseLandmarks) {
+                            lastPosePositions = [
+                                lastResults.poseLandmarks[11],
+                                lastResults.poseLandmarks[12],
+                                lastResults.poseLandmarks[23],
+                                lastResults.poseLandmarks[24]
+                            ];
+                        }
+                        
+                        // بررسی برد بعد از 3 ثانیه
+                        setTimeout(() => {
+                            if (isGameActive) {
+                                gameOver(true);
+                            }
+                        }, 3000);
+                    }
+                }, 1000);
+            }, stopTime);
+        }
+
+        function stopGame() {
+            isGameActive = false;
+            isStopPhase = false;
+            clearTimeout(gameTimeout);
+            
+            // نمایش تصویر
+            demoVideo.style.display = 'none';
+            demoImage.style.display = 'block';
+            
+            resultElement.textContent = "بازی متوقف شد. برای شروع مجدد دکمه سبز را بزنید";
+            
+            // توقف تمام صداها
+            [startAudio, jumpAudio, stopAudio, successAudio, failAudio].forEach(audio => {
+                if (audio) audio.pause();
+            });
+        }
+
+        async function gameOver(success) {
+            isGameActive = false;
+            isStopPhase = false;
+            clearTimeout(gameTimeout);
+            
+            // نمایش تصویر
+            demoVideo.style.display = 'none';
+            demoImage.style.display = 'block';
+            
+            if (success) {
+                resultElement.textContent = "آفرین! برنده شدی! 🎉";
+                await playAudioSafely(successAudio);
+            } else {
+                resultElement.textContent = "آخ آخ تکون خوردی! دوباره تلاش کن";
+                await playAudioSafely(failAudio);
+            }
+        }
+
+        // توقف دوربین، ویدیو و صداها هنگام خروج از صفحه
+        window.addEventListener('beforeunload', () => {
+            camera.stop();
+            demoVideo.pause();
+            // توقف تمام صداها
+            [startAudio, jumpAudio, stopAudio, successAudio, failAudio].forEach(audio => {
+                if (audio) audio.pause();
+            });
+        });
+    </script>
+</body>
+</html> 

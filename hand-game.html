@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>دستت بالا، دستت پایین</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div class="header">
+        <a href="index.html" class="back-button" title="بازگشت">←</a>
+        <h1>دستت بالا، دستت پایین</h1>
+        <div class="header-spacer"></div>
+    </div>
+
+    <div class="container">
+        <div class="game-box">
+            <video id="video" autoplay></video>
+            <div id="result"></div>
+        </div>
+    </div>
+
+    <div class="bottom-nav">
+        <a href="https://ashid.ir/reports" class="nav-item" title="گزارش‌ها">
+            <i class="fas fa-chart-bar"></i>
+        </a>
+        <a href="https://ashid.ir/profile" class="nav-item" title="پروفایل">
+            <i class="fas fa-user-circle"></i>
+        </a>
+        <a href="https://ashid.ir/" class="nav-item" title="خانه">
+            <i class="fas fa-home"></i>
+        </a>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('video');
+        const resultElement = document.getElementById('result');
+        
+        function onResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                // دست شناسایی شد
+                resultElement.textContent = 'دست شناسایی شد! 👋';
+                resultElement.style.color = '#4CAF50';
+            } else {
+                // دست شناسایی نشد
+                resultElement.textContent = 'دست شناسایی نشد';
+                resultElement.style.color = '#666';
+            }
+        }
+
+        const hands = new Hands({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }
+        });
+
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 0, // سبک‌ترین مدل برای سرعت بیشتر
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 640,
+            height: 480
+        });
+
+        camera.start();
+
+        // توقف دوربین هنگام خروج از صفحه
+        window.addEventListener('beforeunload', () => {
+            camera.stop();
+        });
+    </script>
+</body>
+</html>

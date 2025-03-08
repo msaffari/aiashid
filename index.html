@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>بازی و تمرین با هوش مصنوعی</title>
+    <style>
+        @font-face {
+            font-family: 'IRANYekan';
+            src: url('IRANYekanRegular(FaNum).ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        body {
+            font-family: 'IRANYekan', 'Tahoma', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #ffffff;
+        }
+        
+        .header {
+            background-color: #FFD93D;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 0 0 30px 30px;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            margin: 0;
+            color: #000000;
+            font-size: 20px;
+        }
+
+        .back-button {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #000000;
+        }
+
+        .games-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .game-card {
+            position: relative;
+            background: white;
+            border-radius: 25px;
+            overflow: hidden;
+            text-decoration: none;
+            color: inherit;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .game-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .game-card img {
+            width: 100%;
+            height: 250px;
+            object-fit: cover;
+        }
+
+        .game-info {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 20px;
+            background: linear-gradient(to top, #FFD93D, transparent);
+            color: #000000;
+            text-align: center;
+        }
+
+        .game-info h2 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .play-button {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px;
+            height: 60px;
+            background-color: #FFD93D;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .play-button::after {
+            content: '▶';
+            color: white;
+            font-size: 24px;
+            margin-left: 4px;
+        }
+
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: #FFD93D;
+            padding: 15px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            border-radius: 30px 30px 0 0;
+        }
+
+        .nav-item {
+            color: #000000;
+            text-decoration: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .nav-item i {
+            font-size: 24px;
+        }
+
+        .nav-item span {
+            font-size: 12px;
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="header">
+        <button class="back-button">←</button>
+        <h1>بازی و تمرین با هوش مصنوعی</h1>
+        <div class="header-spacer"></div>
+    </div>
+
+    <div class="games-container">
+        <a href="hand-game.html" class="game-card">
+            <img src="assets/game1.jpg" alt="دست رو شونه، دست رو سر">
+            <div class="play-button"></div>
+            <div class="game-info">
+                <h2>دست رو شونه، دست رو سر</h2>
+            </div>
+        </a>
+
+        <a href="body-parts.html" class="game-card">
+            <img src="assets/game2.jpg" alt="شروع، استوپ">
+            <div class="play-button"></div>
+            <div class="game-info">
+                <h2>شروع، استوپ</h2>
+            </div>
+        </a>
+
+        <a href="emotions.html" class="game-card">
+            <img src="assets/game3.jpg" alt="دستت بالا، دستت پایین">
+            <div class="play-button"></div>
+            <div class="game-info">
+                <h2>دستت بالا، دستت پایین</h2>
+            </div>
+        </a>
+
+      
+    </div>
+
+    <div class="bottom-nav">
+        <a href="https://ashid.ir/" class="nav-item">
+            <i class="fas fa-home"></i>
+            <span>خانه</span>
+        </a>
+
+        <a href="https://ashid.ir/profile" class="nav-item">
+            <i class="fas fa-user"></i>
+            <span>پروفایل</span>
+        </a>
+        <a href="https://ashid.ir/reports" class="nav-item">
+            <i class="fas fa-chart-line"></i>
+            <span>گزارش‌ها</span>
+        </a>
+        
+    </div>
+</body>
+</html>
