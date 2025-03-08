@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/annyang/2.6.1/annyang.min.js"></script>
     <style>
         .button-container {
             display: flex;
@@ -199,12 +200,65 @@
         // راه‌اندازی تشخیص صدا
         let recognition;
         let isRecognitionActive = false;
+        let isUsingAnnyang = false;
 
         function startSpeechRecognition() {
+            // اول تلاش می‌کنیم از annyang استفاده کنیم
+            if (annyang) {
+                console.log('استفاده از annyang برای تشخیص صدا');
+                isUsingAnnyang = true;
+                
+                // تعریف دستورات
+                const commands = {
+                    'آشید شروع کن': startGame,
+                    'اشید شروع کن': startGame,
+                    'آشید شروع': startGame,
+                    'آرشید شروع': startGame,
+                    'آشیت شروع': startGame,
+                    'هی شروع': startGame,
+                    'شروع کن': startGame,
+                    'با توام شروع کن': startGame
+                };
+
+                // تنظیم زبان
+                annyang.setLanguage('fa');
+                
+                // اضافه کردن دستورات
+                annyang.addCommands(commands);
+                
+                // شروع
+                annyang.start({ autoRestart: true, continuous: true });
+                
+                // رویدادها
+                annyang.addCallback('start', function() {
+                    isRecognitionActive = true;
+                    console.log('تشخیص صدا (annyang) فعال شد');
+                    updateMicrophoneStatus(true);
+                });
+                
+                annyang.addCallback('end', function() {
+                    isRecognitionActive = false;
+                    console.log('تشخیص صدا (annyang) قطع شد');
+                    updateMicrophoneStatus(false);
+                    // شروع مجدد خودکار
+                    if (!annyang.isListening()) {
+                        annyang.start();
+                    }
+                });
+                
+                annyang.addCallback('error', function(error) {
+                    console.error('خطا در تشخیص صدا (annyang):', error);
+                    updateMicrophoneStatus(false);
+                });
+
+                return;
+            }
+
+            // اگر annyang در دسترس نبود، از Web Speech API استفاده می‌کنیم
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) {
                 console.warn('مرورگر شما از تشخیص صدا پشتیبانی نمی‌کند');
-                alert('لطفاً از مرورگر Chrome یا Edge استفاده کنید. متأسفانه Firefox در حال حاضر از تشخیص صدا پشتیبانی نمی‌کند.');
+                alert('متأسفانه مرورگر شما از تشخیص صدا پشتیبانی نمی‌کند');
                 return;
             }
 
@@ -262,6 +316,13 @@
         }
 
         function restartSpeechRecognition() {
+            if (isUsingAnnyang) {
+                if (annyang && !annyang.isListening()) {
+                    setTimeout(() => annyang.start(), 1000);
+                }
+                return;
+            }
+
             if (recognition) {
                 setTimeout(() => {
                     try {
@@ -440,7 +501,9 @@
         window.addEventListener('beforeunload', () => {
             camera.stop();
             demoVideo.pause();
-            if (recognition) {
+            if (isUsingAnnyang && annyang) {
+                annyang.abort();
+            } else if (recognition) {
                 recognition.stop();
             }
             // توقف تمام صداها
