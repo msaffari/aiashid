@@ -201,14 +201,16 @@
         let isRecognitionActive = false;
 
         function startSpeechRecognition() {
-            if (!('webkitSpeechRecognition' in window)) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
                 console.warn('مرورگر شما از تشخیص صدا پشتیبانی نمی‌کند');
+                alert('لطفاً از مرورگر Chrome یا Edge استفاده کنید. متأسفانه Firefox در حال حاضر از تشخیص صدا پشتیبانی نمی‌کند.');
                 return;
             }
 
             if (isRecognitionActive) return;
 
-            recognition = new webkitSpeechRecognition();
+            recognition = new SpeechRecognition();
             recognition.continuous = true;
             recognition.interimResults = false;
             recognition.lang = 'fa-IR';
