@@ -273,6 +273,8 @@
             if (granted) {
                 camera = initializeCamera();
                 startSpeechRecognition();
+                // به‌روزرسانی وضعیت دکمه میکروفون
+                updateMicButtonStatus(true);
             }
         });
 
@@ -319,6 +321,7 @@
                 isRecognitionActive = true;
                 console.log('تشخیص صدا فعال شد');
                 microphoneRestartAttempts = 0; // ریست کردن شمارنده تلاش‌ها
+                updateMicButtonStatus(true); // به‌روزرسانی وضعیت دکمه میکروفون
             };
 
             recognition.onresult = function(event) {
@@ -346,10 +349,12 @@
                 if ((event.error === 'network' || event.error === 'service-not-allowed') && microphoneRestartAttempts < MAX_RESTART_ATTEMPTS) {
                     isRecognitionActive = false;
                     microphoneRestartAttempts++;
+                    updateMicButtonStatus(false); // به‌روزرسانی وضعیت دکمه میکروفون
                     setTimeout(() => restartSpeechRecognition(), 5000);
                 } else {
                     // در غیر این صورت، فقط وضعیت را به غیرفعال تغییر دهید بدون راه‌اندازی مجدد
                     isRecognitionActive = false;
+                    updateMicButtonStatus(false); // به‌روزرسانی وضعیت دکمه میکروفون
                 }
             };
 
@@ -360,20 +365,24 @@
                 if (microphoneRestartAttempts < MAX_RESTART_ATTEMPTS) {
                     isRecognitionActive = false;
                     microphoneRestartAttempts++;
+                    updateMicButtonStatus(false); // به‌روزرسانی وضعیت دکمه میکروفون
                     console.log(`تلاش مجدد ${microphoneRestartAttempts} از ${MAX_RESTART_ATTEMPTS}`);
                     setTimeout(() => restartSpeechRecognition(), 5000);
                 } else {
                     // در غیر این صورت، فقط وضعیت را به غیرفعال تغییر دهید بدون راه‌اندازی مجدد
                     isRecognitionActive = false;
+                    updateMicButtonStatus(false); // به‌روزرسانی وضعیت دکمه میکروفون
                     console.log('حداکثر تعداد تلاش‌های راه‌اندازی مجدد انجام شد. تشخیص صدا غیرفعال شد.');
                 }
             };
 
             try {
                 recognition.start();
+                updateMicButtonStatus(true); // به‌روزرسانی وضعیت دکمه میکروفون در هنگام شروع
             } catch (error) {
                 console.error('خطا در شروع تشخیص صدا:', error);
                 isRecognitionActive = false;
+                updateMicButtonStatus(false); // به‌روزرسانی وضعیت دکمه میکروفون
                 
                 // فقط اگر تعداد تلاش‌ها از حد مجاز کمتر است، تشخیص صدا را مجدداً راه‌اندازی کنید
                 if (microphoneRestartAttempts < MAX_RESTART_ATTEMPTS) {
@@ -406,12 +415,16 @@
             if (recognition && !isRecognitionActive && permissionsGranted.microphone) {
                 try {
                     recognition.start();
+                    updateMicButtonStatus(true); // به‌روزرسانی وضعیت دکمه میکروفون
                 } catch (error) {
                     console.error('خطا در شروع مجدد تشخیص صدا:', error);
+                    updateMicButtonStatus(false); // به‌روزرسانی وضعیت دکمه میکروفون
                     
                     // تلاش مجدد با تأخیر بیشتر در صورت خطا
                     setTimeout(() => restartSpeechRecognition(), 5000);
                 }
+            } else {
+                updateMicButtonStatus(false); // به‌روزرسانی وضعیت دکمه میکروفون در صورت عدم امکان راه‌اندازی
             }
         }
 
@@ -730,7 +743,20 @@
             .catch(error => console.error('خطا در بررسی مجوز میکروفون:', error));
             
         // درخواست مجوزها در هنگام بارگذاری صفحه
-        document.addEventListener('DOMContentLoaded', requestAllPermissions);
+        document.addEventListener('DOMContentLoaded', () => {
+            // فعال‌سازی خودکار میکروفون و دوربین در ابتدای بارگذاری صفحه
+            requestAllPermissions().then(granted => {
+                if (granted) {
+                    if (!camera) {
+                        camera = initializeCamera();
+                    }
+                    if (!isRecognitionActive) {
+                        startSpeechRecognition();
+                        updateMicButtonStatus(true);
+                    }
+                }
+            });
+        });
     </script>
 </body>
 </html> 
