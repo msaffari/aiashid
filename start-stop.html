@@ -160,53 +160,67 @@
 
         // متغیر برای ذخیره استریم صوتی پایدار
         let persistentAudioStream = null;
-
-        // تابع برای درخواست همه مجوزهای مورد نیاز در ابتدا
-        async function requestAllPermissions() {
-            try {
-                // درخواست همزمان دوربین و میکروفون
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: true, 
-                    audio: true 
-                });
-                
-                console.log('مجوز دوربین و میکروفون با موفقیت دریافت شد');
-                
-                // ذخیره وضعیت مجوزها
-                permissionsGranted.camera = true;
-                permissionsGranted.microphone = true;
-                
-                // ذخیره استریم صوتی برای جلوگیری از قطع و وصل شدن میکروفون
-                persistentAudioStream = stream;
-                
-                return true;
-            } catch (error) {
-                console.error('خطا در دریافت مجوزها:', error);
-                
-                // بررسی نوع خطا برای تشخیص کدام مجوز رد شده است
-                if (error.name === 'NotAllowedError') {
-                    console.error('کاربر مجوز دوربین یا میکروفون را رد کرد');
-                    alert('برای استفاده از بازی، لطفاً به دوربین و میکروفون اجازه دسترسی دهید.');
-                } else if (error.name === 'NotFoundError') {
-                    console.error('دوربین یا میکروفون در دستگاه یافت نشد');
-                    alert('دوربین یا میکروفون در دستگاه شما یافت نشد.');
+        
+        // متغیر برای جلوگیری از خاموش شدن صفحه نمایش
+        let wakeLock = null;
+        
+        // تابع برای فعال کردن قفل بیداری (جلوگیری از خاموش شدن صفحه)
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log('قفل بیداری فعال شد');
+                    
+                    wakeLock.addEventListener('release', () => {
+                        console.log('قفل بیداری آزاد شد');
+                        wakeLock = null;
+                    });
+                } catch (error) {
+                    console.error('خطا در فعال‌سازی قفل بیداری:', error);
                 }
-                
-                return false;
+            } else {
+                console.warn('مرورگر شما از قفل بیداری پشتیبانی نمی‌کند');
+                // روش جایگزین برای مرورگرهای قدیمی‌تر
+                keepScreenAwake();
             }
         }
-
-        // تابع برای پخش صدا با در نظر گرفتن خطاها
-        async function playAudioSafely(audioElement) {
-            try {
-                if (audioElement) {
-                    await audioElement.play();
-                    return new Promise(resolve => {
-                        audioElement.onended = resolve;
+        
+        // روش جایگزین برای جلوگیری از خاموش شدن صفحه در مرورگرهای قدیمی‌تر
+        function keepScreenAwake() {
+            // ایجاد یک ویدیوی مخفی که به طور مداوم پخش می‌شود
+            const video = document.createElement('video');
+            video.setAttribute('loop', '');
+            video.setAttribute('playsinline', '');
+            video.setAttribute('muted', '');
+            video.setAttribute('width', '1');
+            video.setAttribute('height', '1');
+            video.style.position = 'absolute';
+            video.style.opacity = '0.01';
+            
+            // اضافه کردن یک منبع ویدیویی ساده (یک فریم خالی)
+            const source = document.createElement('source');
+            source.setAttribute('src', 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAu1tZGF0AAACrQYF//+p3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE0MiByMjQ3OSBkZDc5YTYxIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAxNCAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTEwIHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAAD2WIhAA3//728P4FNjuZQQAAAu5tb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAAPoAAAAZAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAACGHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAZAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAgAAAAIAAAAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAGQAAAAAAAEAAAAAAZBtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAACgAAAAEAFXEAAAAAAAtaGRscgAAAAAAAAAAdmlkZQAAAAAAAAAAAAAAAFZpZGVvSGFuZGxlcgAAAAE7bWluZgAAABR2bWhkAAAAAQAAAAAAAAAAAAAAJGRpbmYAAAAcZHJlZgAAAAAAAAABAAAADHVybCAAAAABAAAA+3N0YmwAAACXc3RzZAAAAAAAAAABAAAAh2F2YzEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAACAAgASAAAAEgAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABj//wAAADFhdmNDAWQACv/hABhnZAAKrNlCjfkhAAADAAEAAAMAAg8SJZYBAAZo6+JLIsAAAAAYc3R0cwAAAAAAAAABAAAABAAAEAAAAAAUc3RzcwAAAAAAAAABAAAAAQAAABxzdHNjAAAAAAAAAAEAAAABAAAABAAAAAEAAAAkc3RzegAAAAAAAAAAAAAABAAAAV8AAAAGAAAABgAAABMAAAAUc3RjbwAAAAAAAAABAAAAMAAAAGJ1ZHRhAAAAWm1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAALWlsc3QAAAAlqXRvbwAAAB1kYXRhAAAAAQAAAABMYXZmNTYuNDAuMTAx');
+            video.appendChild(source);
+            
+            document.body.appendChild(video);
+            
+            // پخش ویدیو برای جلوگیری از خاموش شدن صفحه
+            video.play().catch(error => {
+                console.error('خطا در پخش ویدیوی نگهدارنده صفحه:', error);
+            });
+        }
+        
+        // آزادسازی قفل بیداری
+        function releaseWakeLock() {
+            if (wakeLock) {
+                wakeLock.release()
+                    .then(() => {
+                        console.log('قفل بیداری آزاد شد');
+                        wakeLock = null;
+                    })
+                    .catch(error => {
+                        console.error('خطا در آزادسازی قفل بیداری:', error);
                     });
-                }
-            } catch (error) {
-                console.log('خطا در پخش صدا:', error);
             }
         }
 
@@ -328,6 +342,12 @@
             recognition.interimResults = false;
             recognition.lang = 'fa-IR';
             recognition.maxAlternatives = 1;
+            
+            // تنظیمات خاص برای موبایل
+            if (isMobileDevice()) {
+                // در موبایل، زمان تشخیص را افزایش می‌دهیم
+                recognition.continuous = false; // در موبایل، حالت مداوم مشکل‌ساز است
+            }
 
             recognition.onstart = function() {
                 isRecognitionActive = true;
@@ -352,6 +372,17 @@
                     command.includes('با توام شروع کن')) {
                     startGame();
                 }
+                
+                // در موبایل، بعد از هر نتیجه، تشخیص صدا را مجدداً راه‌اندازی می‌کنیم
+                if (isMobileDevice() && !isRecognitionPaused) {
+                    setTimeout(() => {
+                        try {
+                            recognition.start();
+                        } catch (error) {
+                            console.error('خطا در راه‌اندازی مجدد تشخیص صدا در موبایل:', error);
+                        }
+                    }, 300);
+                }
             };
 
             recognition.onerror = function(event) {
@@ -361,6 +392,17 @@
                 if (event.error === 'no-speech') {
                     // خطای عدم تشخیص صدا را نادیده بگیر
                     console.log('صدایی شنیده نشد، ادامه تشخیص...');
+                    
+                    // در موبایل، بعد از خطای عدم تشخیص صدا، تشخیص صدا را مجدداً راه‌اندازی می‌کنیم
+                    if (isMobileDevice() && !isRecognitionPaused) {
+                        setTimeout(() => {
+                            try {
+                                recognition.start();
+                            } catch (error) {
+                                console.error('خطا در راه‌اندازی مجدد تشخیص صدا در موبایل:', error);
+                            }
+                        }, 300);
+                    }
                 } else if (event.error === 'aborted') {
                     // خطای قطع شدن را نادیده بگیر
                     console.log('تشخیص صدا قطع شد، ادامه تشخیص...');
@@ -369,6 +411,17 @@
                     console.error('خطای تشخیص صدا:', event.error);
                     isRecognitionActive = false;
                     updateMicButtonStatus(false);
+                    
+                    // در موبایل، بعد از خطا، تشخیص صدا را مجدداً راه‌اندازی می‌کنیم
+                    if (isMobileDevice() && !isRecognitionPaused) {
+                        setTimeout(() => {
+                            try {
+                                recognition.start();
+                            } catch (error) {
+                                console.error('خطا در راه‌اندازی مجدد تشخیص صدا در موبایل:', error);
+                            }
+                        }, 1000);
+                    }
                 }
             };
 
@@ -390,7 +443,7 @@
                                 updateMicButtonStatus(false);
                             }
                         }
-                    }, 500);
+                    }, isMobileDevice() ? 300 : 500);
                 } else {
                     console.log('تشخیص صدا در حالت موقت توقف است');
                     isRecognitionActive = false;
@@ -573,6 +626,9 @@
             lastPosePositions = [];
             resultElement.textContent = "Ready...";
             
+            // فعال کردن قفل بیداری برای جلوگیری از خاموش شدن صفحه
+            requestWakeLock();
+            
             // اطمینان از فعال بودن میکروفون در طول بازی
             if (!isRecognitionActive && !isRecognitionPaused) {
                 startSpeechRecognition();
@@ -642,6 +698,9 @@
             [startAudio, jumpAudio, stopAudio, successAudio, failAudio].forEach(audio => {
                 if (audio) audio.pause();
             });
+            
+            // آزادسازی قفل بیداری
+            releaseWakeLock();
         }
 
         async function gameOver(success) {
@@ -660,6 +719,9 @@
                 resultElement.textContent = "آخ آخ تکون خوردی! دوباره تلاش کن";
                 await playAudioSafely(failAudio);
             }
+            
+            // آزادسازی قفل بیداری
+            releaseWakeLock();
         }
 
         // توقف دوربین، ویدیو و صداها هنگام خروج از صفحه
@@ -683,6 +745,9 @@
             if (persistentAudioStream) {
                 persistentAudioStream.getTracks().forEach(track => track.stop());
             }
+            
+            // آزادسازی قفل بیداری
+            releaseWakeLock();
             
             // توقف تمام صداها
             [startAudio, jumpAudio, stopAudio, successAudio, failAudio].forEach(audio => {
@@ -715,6 +780,55 @@
         // تشخیص دستگاه موبایل
         function isMobileDevice() {
             return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+
+        // تابع برای درخواست همه مجوزهای مورد نیاز در ابتدا
+        async function requestAllPermissions() {
+            try {
+                // درخواست همزمان دوربین و میکروفون
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: true 
+                });
+                
+                console.log('مجوز دوربین و میکروفون با موفقیت دریافت شد');
+                
+                // ذخیره وضعیت مجوزها
+                permissionsGranted.camera = true;
+                permissionsGranted.microphone = true;
+                
+                // ذخیره استریم صوتی برای جلوگیری از قطع و وصل شدن میکروفون
+                persistentAudioStream = stream;
+                
+                return true;
+            } catch (error) {
+                console.error('خطا در دریافت مجوزها:', error);
+                
+                // بررسی نوع خطا برای تشخیص کدام مجوز رد شده است
+                if (error.name === 'NotAllowedError') {
+                    console.error('کاربر مجوز دوربین یا میکروفون را رد کرد');
+                    alert('برای استفاده از بازی، لطفاً به دوربین و میکروفون اجازه دسترسی دهید.');
+                } else if (error.name === 'NotFoundError') {
+                    console.error('دوربین یا میکروفون در دستگاه یافت نشد');
+                    alert('دوربین یا میکروفون در دستگاه شما یافت نشد.');
+                }
+                
+                return false;
+            }
+        }
+
+        // تابع برای پخش صدا با در نظر گرفتن خطاها
+        async function playAudioSafely(audioElement) {
+            try {
+                if (audioElement) {
+                    await audioElement.play();
+                    return new Promise(resolve => {
+                        audioElement.onended = resolve;
+                    });
+                }
+            } catch (error) {
+                console.log('خطا در پخش صدا:', error);
+            }
         }
 
         // درخواست مجوزها در هنگام بارگذاری صفحه
