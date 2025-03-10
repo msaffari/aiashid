@@ -161,57 +161,110 @@
         // متغیر برای ذخیره استریم صوتی پایدار
         let persistentAudioStream = null;
         
-        // متغیر برای جلوگیری از خاموش شدن صفحه نمایش
+        // متغیر برای جلوگیری از خاموش شدن صفحه
         let wakeLock = null;
+        let noSleepVideo = null; // متغیر جدید برای نگهداری ویدیوی جلوگیری از خواب
         
         // تابع برای فعال کردن قفل بیداری (جلوگیری از خاموش شدن صفحه)
         async function requestWakeLock() {
-            if ('wakeLock' in navigator) {
-                try {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                    console.log('قفل بیداری فعال شد');
-                    
-                    wakeLock.addEventListener('release', () => {
-                        console.log('قفل بیداری آزاد شد');
-                        wakeLock = null;
-                    });
-                } catch (error) {
-                    console.error('خطا در فعال‌سازی قفل بیداری:', error);
+            try {
+                // روش 1: استفاده از Wake Lock API
+                if ('wakeLock' in navigator) {
+                    try {
+                        wakeLock = await navigator.wakeLock.request('screen');
+                        console.log('قفل بیداری فعال شد');
+                        
+                        wakeLock.addEventListener('release', () => {
+                            console.log('قفل بیداری آزاد شد');
+                            wakeLock = null;
+                            // در صورت آزاد شدن ناخواسته، دوباره تلاش کنیم
+                            if (isGameActive) {
+                                requestWakeLock();
+                            }
+                        });
+                        return;
+                    } catch (error) {
+                        console.error('خطا در فعال‌سازی قفل بیداری:', error);
+                    }
                 }
-            } else {
-                console.warn('مرورگر شما از قفل بیداری پشتیبانی نمی‌کند');
-                // روش جایگزین برای مرورگرهای قدیمی‌تر
+                
+                // روش 2: استفاده از ویدیوی مخفی
                 keepScreenAwake();
+                
+                // روش 3: استفاده از تایمر برای جلوگیری از خواب
+                startNoSleepTimer();
+            } catch (error) {
+                console.error('خطا در فعال‌سازی قفل بیداری:', error);
             }
         }
         
         // روش جایگزین برای جلوگیری از خاموش شدن صفحه در مرورگرهای قدیمی‌تر
         function keepScreenAwake() {
+            // اگر قبلاً ویدیویی ایجاد شده، آن را حذف کنیم
+            if (noSleepVideo) {
+                try {
+                    noSleepVideo.pause();
+                    document.body.removeChild(noSleepVideo);
+                } catch (e) {}
+            }
+            
             // ایجاد یک ویدیوی مخفی که به طور مداوم پخش می‌شود
-            const video = document.createElement('video');
-            video.setAttribute('loop', '');
-            video.setAttribute('playsinline', '');
-            video.setAttribute('muted', '');
-            video.setAttribute('width', '1');
-            video.setAttribute('height', '1');
-            video.style.position = 'absolute';
-            video.style.opacity = '0.01';
+            noSleepVideo = document.createElement('video');
+            noSleepVideo.setAttribute('loop', '');
+            noSleepVideo.setAttribute('playsinline', '');
+            noSleepVideo.setAttribute('muted', '');
+            noSleepVideo.setAttribute('width', '1');
+            noSleepVideo.setAttribute('height', '1');
+            noSleepVideo.style.position = 'absolute';
+            noSleepVideo.style.top = '0';
+            noSleepVideo.style.left = '0';
+            noSleepVideo.style.opacity = '0.01';
             
             // اضافه کردن یک منبع ویدیویی ساده (یک فریم خالی)
             const source = document.createElement('source');
             source.setAttribute('src', 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAu1tZGF0AAACrQYF//+p3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE0MiByMjQ3OSBkZDc5YTYxIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAxNCAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTEwIHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAAD2WIhAA3//728P4FNjuZQQAAAu5tb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAAPoAAAAZAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAACGHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAZAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAgAAAAIAAAAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAGQAAAAAAAEAAAAAAZBtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAACgAAAAEAFXEAAAAAAAtaGRscgAAAAAAAAAAdmlkZQAAAAAAAAAAAAAAAFZpZGVvSGFuZGxlcgAAAAE7bWluZgAAABR2bWhkAAAAAQAAAAAAAAAAAAAAJGRpbmYAAAAcZHJlZgAAAAAAAAABAAAADHVybCAAAAABAAAA+3N0YmwAAACXc3RzZAAAAAAAAAABAAAAh2F2YzEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAACAAgASAAAAEgAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABj//wAAADFhdmNDAWQACv/hABhnZAAKrNlCjfkhAAADAAEAAAMAAg8SJZYBAAZo6+JLIsAAAAAYc3R0cwAAAAAAAAABAAAABAAAEAAAAAAUc3RzcwAAAAAAAAABAAAAAQAAABxzdHNjAAAAAAAAAAEAAAABAAAABAAAAAEAAAAkc3RzegAAAAAAAAAAAAAABAAAAV8AAAAGAAAABgAAABMAAAAUc3RjbwAAAAAAAAABAAAAMAAAAGJ1ZHRhAAAAWm1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAALWlsc3QAAAAlqXRvbwAAAB1kYXRhAAAAAQAAAABMYXZmNTYuNDAuMTAx');
-            video.appendChild(source);
+            noSleepVideo.appendChild(source);
             
-            document.body.appendChild(video);
+            document.body.appendChild(noSleepVideo);
             
             // پخش ویدیو برای جلوگیری از خاموش شدن صفحه
-            video.play().catch(error => {
-                console.error('خطا در پخش ویدیوی نگهدارنده صفحه:', error);
-            });
+            const playPromise = noSleepVideo.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.error('خطا در پخش ویدیوی نگهدارنده صفحه:', error);
+                    // در صورت خطا، تلاش مجدد با تعامل کاربر
+                    document.addEventListener('click', function enableNoSleep() {
+                        noSleepVideo.play();
+                        document.removeEventListener('click', enableNoSleep);
+                    }, { once: true });
+                });
+            }
+        }
+        
+        // تایمر برای جلوگیری از خواب
+        let noSleepTimer = null;
+        
+        function startNoSleepTimer() {
+            // پاکسازی تایمر قبلی
+            if (noSleepTimer) {
+                clearInterval(noSleepTimer);
+            }
+            
+            // ایجاد تایمر جدید که هر 10 ثانیه یک عملیات انجام می‌دهد
+            noSleepTimer = setInterval(() => {
+                // انجام یک عملیات ساده برای جلوگیری از خواب
+                console.log('نگهداری صفحه در حالت فعال...');
+                
+                // اگر ویدیوی نگهدارنده وجود دارد، مطمئن شویم که در حال پخش است
+                if (noSleepVideo && noSleepVideo.paused) {
+                    noSleepVideo.play().catch(e => {});
+                }
+            }, 10000);
         }
         
         // آزادسازی قفل بیداری
         function releaseWakeLock() {
+            // آزادسازی Wake Lock API
             if (wakeLock) {
                 wakeLock.release()
                     .then(() => {
@@ -221,6 +274,23 @@
                     .catch(error => {
                         console.error('خطا در آزادسازی قفل بیداری:', error);
                     });
+            }
+            
+            // توقف ویدیوی نگهدارنده
+            if (noSleepVideo) {
+                try {
+                    noSleepVideo.pause();
+                    if (document.body.contains(noSleepVideo)) {
+                        document.body.removeChild(noSleepVideo);
+                    }
+                    noSleepVideo = null;
+                } catch (e) {}
+            }
+            
+            // توقف تایمر
+            if (noSleepTimer) {
+                clearInterval(noSleepTimer);
+                noSleepTimer = null;
             }
         }
 
@@ -338,16 +408,19 @@
             
             // ایجاد نمونه جدید از تشخیص صدا
             recognition = new SpeechRecognition();
-            recognition.continuous = true;
-            recognition.interimResults = false;
-            recognition.lang = 'fa-IR';
-            recognition.maxAlternatives = 1;
             
             // تنظیمات خاص برای موبایل
             if (isMobileDevice()) {
-                // در موبایل، زمان تشخیص را افزایش می‌دهیم
-                recognition.continuous = false; // در موبایل، حالت مداوم مشکل‌ساز است
+                // در موبایل، حالت مداوم مشکل‌ساز است
+                recognition.continuous = false;
+                recognition.interimResults = false;
+            } else {
+                recognition.continuous = true;
+                recognition.interimResults = false;
             }
+            
+            recognition.lang = 'fa-IR';
+            recognition.maxAlternatives = 1;
 
             recognition.onstart = function() {
                 isRecognitionActive = true;
@@ -377,9 +450,20 @@
                 if (isMobileDevice() && !isRecognitionPaused) {
                     setTimeout(() => {
                         try {
-                            recognition.start();
+                            if (!isRecognitionPaused) {
+                                recognition.start();
+                                console.log('تشخیص صدا در موبایل مجدداً راه‌اندازی شد');
+                            }
                         } catch (error) {
                             console.error('خطا در راه‌اندازی مجدد تشخیص صدا در موبایل:', error);
+                            // تلاش مجدد با تأخیر بیشتر
+                            setTimeout(() => {
+                                if (!isRecognitionPaused) {
+                                    try {
+                                        recognition.start();
+                                    } catch (e) {}
+                                }
+                            }, 1000);
                         }
                     }, 300);
                 }
@@ -397,7 +481,9 @@
                     if (isMobileDevice() && !isRecognitionPaused) {
                         setTimeout(() => {
                             try {
-                                recognition.start();
+                                if (!isRecognitionPaused) {
+                                    recognition.start();
+                                }
                             } catch (error) {
                                 console.error('خطا در راه‌اندازی مجدد تشخیص صدا در موبایل:', error);
                             }
@@ -406,6 +492,19 @@
                 } else if (event.error === 'aborted') {
                     // خطای قطع شدن را نادیده بگیر
                     console.log('تشخیص صدا قطع شد، ادامه تشخیص...');
+                    
+                    // در موبایل، بعد از خطای قطع شدن، تشخیص صدا را مجدداً راه‌اندازی می‌کنیم
+                    if (isMobileDevice() && !isRecognitionPaused) {
+                        setTimeout(() => {
+                            try {
+                                if (!isRecognitionPaused) {
+                                    recognition.start();
+                                }
+                            } catch (error) {
+                                console.error('خطا در راه‌اندازی مجدد تشخیص صدا در موبایل:', error);
+                            }
+                        }, 500);
+                    }
                 } else {
                     // سایر خطاها
                     console.error('خطای تشخیص صدا:', event.error);
@@ -417,6 +516,8 @@
                         setTimeout(() => {
                             try {
                                 recognition.start();
+                                isRecognitionActive = true;
+                                updateMicButtonStatus(true);
                             } catch (error) {
                                 console.error('خطا در راه‌اندازی مجدد تشخیص صدا در موبایل:', error);
                             }
@@ -441,6 +542,17 @@
                             } catch (error) {
                                 console.error('خطا در راه‌اندازی مجدد تشخیص صدا:', error);
                                 updateMicButtonStatus(false);
+                                
+                                // تلاش مجدد با تأخیر بیشتر
+                                setTimeout(() => {
+                                    if (!isRecognitionPaused) {
+                                        try {
+                                            recognition.start();
+                                            isRecognitionActive = true;
+                                            updateMicButtonStatus(true);
+                                        } catch (e) {}
+                                    }
+                                }, 1000);
                             }
                         }
                     }, isMobileDevice() ? 300 : 500);
@@ -459,6 +571,15 @@
                 console.error('خطا در شروع تشخیص صدا:', error);
                 isRecognitionActive = false;
                 updateMicButtonStatus(false);
+                
+                // تلاش مجدد با تأخیر
+                setTimeout(() => {
+                    try {
+                        recognition.start();
+                        isRecognitionActive = true;
+                        updateMicButtonStatus(true);
+                    } catch (e) {}
+                }, 1000);
             }
         }
 
@@ -548,6 +669,11 @@
                     } else {
                         startSpeechRecognition();
                     }
+                }
+                
+                // در موبایل، این کلیک می‌تواند برای فعال‌سازی ویدیوی نگهدارنده صفحه استفاده شود
+                if (noSleepVideo && noSleepVideo.paused) {
+                    noSleepVideo.play().catch(e => {});
                 }
             };
             
