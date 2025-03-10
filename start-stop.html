@@ -152,11 +152,14 @@
         const successAudio = document.getElementById('success-audio');
         const failAudio = document.getElementById('fail-audio');
 
-        // متغیر برای ذخیره وضعیت مجوزها
+        // متغیر برای ذخیره وضعیت مجوزهای مورد نیاز در ابتدا
         let permissionsGranted = {
             camera: false,
             microphone: false
         };
+
+        // متغیر برای ذخیره استریم صوتی پایدار
+        let persistentAudioStream = null;
 
         // تابع برای درخواست همه مجوزهای مورد نیاز در ابتدا
         async function requestAllPermissions() {
@@ -173,30 +176,8 @@
                 permissionsGranted.camera = true;
                 permissionsGranted.microphone = true;
                 
-                // در دستگاه‌های موبایل، استریم صوتی را نگه دار تا از قطع و وصل شدن جلوگیری شود
-                if (isMobileDevice()) {
-                    // فقط ترک تصویری را متوقف کن، ترک صوتی را نگه دار
-                    stream.getTracks().forEach(track => {
-                        if (track.kind === 'video') {
-                            track.stop();
-                        }
-                    });
-                    
-                    // ذخیره استریم صوتی برای استفاده بعدی
-                    window.persistentAudioStream = stream;
-                } else {
-                    // در دسکتاپ، منابع استریم را آزاد کن
-                    stream.getTracks().forEach(track => {
-                        if (track.kind === 'audio') {
-                            track.stop();
-                        }
-                    });
-                }
-                
-                // شروع تشخیص صدا
-                if (!isRecognitionActive) {
-                    startSpeechRecognition();
-                }
+                // ذخیره استریم صوتی برای جلوگیری از قطع و وصل شدن میکروفون
+                persistentAudioStream = stream;
                 
                 return true;
             } catch (error) {
@@ -205,8 +186,10 @@
                 // بررسی نوع خطا برای تشخیص کدام مجوز رد شده است
                 if (error.name === 'NotAllowedError') {
                     console.error('کاربر مجوز دوربین یا میکروفون را رد کرد');
+                    alert('برای استفاده از بازی، لطفاً به دوربین و میکروفون اجازه دسترسی دهید.');
                 } else if (error.name === 'NotFoundError') {
                     console.error('دوربین یا میکروفون در دستگاه یافت نشد');
+                    alert('دوربین یا میکروفون در دستگاه شما یافت نشد.');
                 }
                 
                 return false;
@@ -251,16 +234,21 @@
         // راه‌اندازی دوربین فقط اگر مجوز دریافت شده باشد
         function initializeCamera() {
             if (permissionsGranted.camera) {
-                const cameraInstance = new Camera(videoElement, {
-                    onFrame: async () => {
-                        await pose.send({image: videoElement});
-                    },
-                    width: 333,
-                    height: 250
-                });
-                
-                cameraInstance.start();
-                return cameraInstance;
+                try {
+                    const cameraInstance = new Camera(videoElement, {
+                        onFrame: async () => {
+                            await pose.send({image: videoElement});
+                        },
+                        width: 333,
+                        height: 250
+                    });
+                    
+                    cameraInstance.start();
+                    return cameraInstance;
+                } catch (error) {
+                    console.error('خطا در راه‌اندازی دوربین:', error);
+                    return null;
+                }
             }
             return null;
         }
@@ -268,21 +256,34 @@
         // متغیر دوربین را در سطح بالاتر تعریف کن
         let camera = null;
 
-        // درخواست مجوزها و سپس راه‌اندازی دوربین و تشخیص صدا
-        requestAllPermissions().then(granted => {
+        // راه‌اندازی تشخیص صدا
+        let recognition = null;
+        let isRecognitionActive = false;
+        let isRecognitionPaused = false; // متغیر جدید برای تشخیص حالت موقت توقف
+        
+        // تابع برای راه‌اندازی اولیه
+        async function initialize() {
+            const granted = await requestAllPermissions();
             if (granted) {
-                camera = initializeCamera();
-                startSpeechRecognition();
+                // راه‌اندازی دوربین
+                if (!camera) {
+                    camera = initializeCamera();
+                }
+                
+                // راه‌اندازی تشخیص صدا
+                if (!isRecognitionActive) {
+                    startSpeechRecognition();
+                }
+                
                 // به‌روزرسانی وضعیت دکمه میکروفون
                 updateMicButtonStatus(true);
+            } else {
+                updateMicButtonStatus(false);
             }
-        });
+        }
 
-        // راه‌اندازی تشخیص صدا
-        let recognition;
-        let isRecognitionActive = false;
-        let microphoneRestartAttempts = 0; // شمارنده تلاش‌های راه‌اندازی مجدد
-        const MAX_RESTART_ATTEMPTS = 2; // حداکثر تعداد تلاش‌های مجدد
+        // فراخوانی تابع راه‌اندازی اولیه
+        initialize();
 
         function startSpeechRecognition() {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -292,6 +293,7 @@
                 return;
             }
 
+            // اگر تشخیص صدا در حال حاضر فعال است، نیازی به راه‌اندازی مجدد نیست
             if (isRecognitionActive) return;
             
             // اگر مجوز میکروفون دریافت نشده، ابتدا آن را درخواست کن
@@ -304,6 +306,15 @@
                 return;
             }
             
+            // اگر در حالت موقت توقف هستیم، فقط وضعیت را تغییر بده
+            if (isRecognitionPaused && recognition) {
+                isRecognitionPaused = false;
+                isRecognitionActive = true;
+                updateMicButtonStatus(true);
+                return;
+            }
+            
+            // در غیر این صورت، تشخیص صدا را از ابتدا راه‌اندازی کن
             initializeSpeechRecognition();
         }
         
@@ -311,6 +322,7 @@
         function initializeSpeechRecognition() {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             
+            // ایجاد نمونه جدید از تشخیص صدا
             recognition = new SpeechRecognition();
             recognition.continuous = true;
             recognition.interimResults = false;
@@ -319,9 +331,9 @@
 
             recognition.onstart = function() {
                 isRecognitionActive = true;
+                isRecognitionPaused = false;
                 console.log('تشخیص صدا فعال شد');
-                microphoneRestartAttempts = 0; // ریست کردن شمارنده تلاش‌ها
-                updateMicButtonStatus(true); // به‌روزرسانی وضعیت دکمه میکروفون
+                updateMicButtonStatus(true);
             };
 
             recognition.onresult = function(event) {
@@ -345,50 +357,55 @@
             recognition.onerror = function(event) {
                 console.error('خطا در تشخیص صدا:', event.error);
                 
-                // فقط در صورت خطاهای خاص و اگر تعداد تلاش‌ها از حد مجاز کمتر است، تشخیص صدا را مجدداً راه‌اندازی کنید
-                if ((event.error === 'network' || event.error === 'service-not-allowed') && microphoneRestartAttempts < MAX_RESTART_ATTEMPTS) {
-                    isRecognitionActive = false;
-                    microphoneRestartAttempts++;
-                    updateMicButtonStatus(false); // به‌روزرسانی وضعیت دکمه میکروفون
-                    setTimeout(() => restartSpeechRecognition(), 5000);
+                // در صورت خطا، وضعیت را به‌روز کن اما تشخیص صدا را متوقف نکن
+                if (event.error === 'no-speech') {
+                    // خطای عدم تشخیص صدا را نادیده بگیر
+                    console.log('صدایی شنیده نشد، ادامه تشخیص...');
+                } else if (event.error === 'aborted') {
+                    // خطای قطع شدن را نادیده بگیر
+                    console.log('تشخیص صدا قطع شد، ادامه تشخیص...');
                 } else {
-                    // در غیر این صورت، فقط وضعیت را به غیرفعال تغییر دهید بدون راه‌اندازی مجدد
+                    // سایر خطاها
+                    console.error('خطای تشخیص صدا:', event.error);
                     isRecognitionActive = false;
-                    updateMicButtonStatus(false); // به‌روزرسانی وضعیت دکمه میکروفون
+                    updateMicButtonStatus(false);
                 }
             };
 
             recognition.onend = function() {
-                console.log('تشخیص صدا قطع شد');
+                console.log('تشخیص صدا به پایان رسید');
                 
-                // فقط اگر تعداد تلاش‌ها از حد مجاز کمتر است، تشخیص صدا را مجدداً راه‌اندازی کنید
-                if (microphoneRestartAttempts < MAX_RESTART_ATTEMPTS) {
+                // اگر در حالت موقت توقف نیستیم، تشخیص صدا را مجدداً راه‌اندازی کن
+                if (!isRecognitionPaused) {
                     isRecognitionActive = false;
-                    microphoneRestartAttempts++;
-                    updateMicButtonStatus(false); // به‌روزرسانی وضعیت دکمه میکروفون
-                    console.log(`تلاش مجدد ${microphoneRestartAttempts} از ${MAX_RESTART_ATTEMPTS}`);
-                    setTimeout(() => restartSpeechRecognition(), 5000);
+                    
+                    // تلاش مجدد با تأخیر کوتاه
+                    setTimeout(() => {
+                        if (!isRecognitionPaused) {
+                            try {
+                                recognition.start();
+                                console.log('تشخیص صدا مجدداً راه‌اندازی شد');
+                            } catch (error) {
+                                console.error('خطا در راه‌اندازی مجدد تشخیص صدا:', error);
+                                updateMicButtonStatus(false);
+                            }
+                        }
+                    }, 500);
                 } else {
-                    // در غیر این صورت، فقط وضعیت را به غیرفعال تغییر دهید بدون راه‌اندازی مجدد
+                    console.log('تشخیص صدا در حالت موقت توقف است');
                     isRecognitionActive = false;
-                    updateMicButtonStatus(false); // به‌روزرسانی وضعیت دکمه میکروفون
-                    console.log('حداکثر تعداد تلاش‌های راه‌اندازی مجدد انجام شد. تشخیص صدا غیرفعال شد.');
+                    updateMicButtonStatus(false);
                 }
             };
 
             try {
                 recognition.start();
-                updateMicButtonStatus(true); // به‌روزرسانی وضعیت دکمه میکروفون در هنگام شروع
+                console.log('تشخیص صدا شروع شد');
+                updateMicButtonStatus(true);
             } catch (error) {
                 console.error('خطا در شروع تشخیص صدا:', error);
                 isRecognitionActive = false;
-                updateMicButtonStatus(false); // به‌روزرسانی وضعیت دکمه میکروفون
-                
-                // فقط اگر تعداد تلاش‌ها از حد مجاز کمتر است، تشخیص صدا را مجدداً راه‌اندازی کنید
-                if (microphoneRestartAttempts < MAX_RESTART_ATTEMPTS) {
-                    microphoneRestartAttempts++;
-                    setTimeout(() => restartSpeechRecognition(), 5000);
-                }
+                updateMicButtonStatus(false);
             }
         }
 
@@ -411,23 +428,36 @@
             document.querySelector('.header').style.marginTop = '40px';
         }
 
-        function restartSpeechRecognition() {
-            if (recognition && !isRecognitionActive && permissionsGranted.microphone) {
+        // توقف موقت تشخیص صدا
+        function pauseSpeechRecognition() {
+            if (recognition && isRecognitionActive) {
                 try {
-                    recognition.start();
-                    updateMicButtonStatus(true); // به‌روزرسانی وضعیت دکمه میکروفون
+                    isRecognitionPaused = true;
+                    recognition.stop();
+                    console.log('تشخیص صدا موقتاً متوقف شد');
                 } catch (error) {
-                    console.error('خطا در شروع مجدد تشخیص صدا:', error);
-                    updateMicButtonStatus(false); // به‌روزرسانی وضعیت دکمه میکروفون
-                    
-                    // تلاش مجدد با تأخیر بیشتر در صورت خطا
-                    setTimeout(() => restartSpeechRecognition(), 5000);
+                    console.error('خطا در توقف موقت تشخیص صدا:', error);
                 }
-            } else {
-                updateMicButtonStatus(false); // به‌روزرسانی وضعیت دکمه میکروفون در صورت عدم امکان راه‌اندازی
             }
         }
 
+        // از سرگیری تشخیص صدا
+        function resumeSpeechRecognition() {
+            if (recognition && isRecognitionPaused) {
+                try {
+                    isRecognitionPaused = false;
+                    recognition.start();
+                    isRecognitionActive = true;
+                    console.log('تشخیص صدا از سر گرفته شد');
+                    updateMicButtonStatus(true);
+                } catch (error) {
+                    console.error('خطا در از سرگیری تشخیص صدا:', error);
+                    updateMicButtonStatus(false);
+                }
+            }
+        }
+
+        // تابع برای حذف نشانگر میکروفون بالای صفحه (برای سازگاری با کد قبلی)
         function updateMicrophoneStatus(isActive) {
             // حذف کامل نشانگر میکروفون بالای صفحه
             const existingMicStatus = document.getElementById('mic-status');
@@ -453,41 +483,25 @@
             micButton.style.zIndex = '1000';
             micButton.style.fontFamily = 'IRANYekan, Tahoma, sans-serif';
             
-            micButton.onclick = async function() {
-                // ریست کامل تشخیص صدا
-                resetSpeechRecognition();
+            micButton.onclick = function() {
+                if (isRecognitionActive || isRecognitionPaused) {
+                    // اگر میکروفون فعال است، آن را غیرفعال کن
+                    pauseSpeechRecognition();
+                    updateMicButtonStatus(false);
+                } else {
+                    // اگر میکروفون غیرفعال است، آن را فعال کن
+                    if (isRecognitionPaused) {
+                        resumeSpeechRecognition();
+                    } else {
+                        startSpeechRecognition();
+                    }
+                }
             };
             
             document.body.appendChild(micButton);
             
-            // به‌روزرسانی وضعیت دکمه بر اساس وضعیت میکروفون
+            // به‌روزرسانی وضعیت اولیه دکمه
             updateMicButtonStatus(isRecognitionActive);
-        }
-        
-        // تابع برای ریست کامل تشخیص صدا
-        function resetSpeechRecognition() {
-            // توقف تشخیص صدا فعلی
-            if (recognition && isRecognitionActive) {
-                try {
-                    recognition.stop();
-                } catch (error) {
-                    console.error('خطا در توقف تشخیص صدا:', error);
-                }
-            }
-            
-            // ریست متغیرها
-            isRecognitionActive = false;
-            microphoneRestartAttempts = 0;
-            
-            // درخواست مجدد مجوزها و راه‌اندازی مجدد
-            requestAllPermissions().then(granted => {
-                if (granted) {
-                    startSpeechRecognition();
-                    updateMicButtonStatus(true);
-                } else {
-                    updateMicButtonStatus(false);
-                }
-            });
         }
         
         // به‌روزرسانی وضعیت دکمه میکروفون
@@ -504,6 +518,7 @@
             }
         }
         
+        // ایجاد دکمه میکروفون
         createMicrophoneButton();
 
         function onResults(results) {
@@ -557,6 +572,11 @@
             isStopPhase = false;
             lastPosePositions = [];
             resultElement.textContent = "Ready...";
+            
+            // اطمینان از فعال بودن میکروفون در طول بازی
+            if (!isRecognitionActive && !isRecognitionPaused) {
+                startSpeechRecognition();
+            }
             
             // پخش صدای شروع
             await playAudioSafely(startAudio);
@@ -649,21 +669,19 @@
             }
             demoVideo.pause();
             
-            // در دستگاه‌های غیر موبایل، تشخیص صدا را متوقف کن
-            if (!isMobileDevice()) {
-                if (recognition) {
-                    try {
-                        recognition.stop();
-                        isRecognitionActive = false;
-                    } catch (error) {
-                        console.error('خطا در توقف تشخیص صدا:', error);
-                    }
+            // توقف تشخیص صدا
+            if (recognition) {
+                try {
+                    recognition.stop();
+                    isRecognitionActive = false;
+                } catch (error) {
+                    console.error('خطا در توقف تشخیص صدا:', error);
                 }
             }
             
             // آزادسازی استریم صوتی پایدار در صورت وجود
-            if (window.persistentAudioStream) {
-                window.persistentAudioStream.getTracks().forEach(track => track.stop());
+            if (persistentAudioStream) {
+                persistentAudioStream.getTracks().forEach(track => track.stop());
             }
             
             // توقف تمام صداها
@@ -683,26 +701,13 @@
             if (document.visibilityState === 'hidden') {
                 // صفحه پنهان شده است (کاربر به تب دیگری رفته یا برنامه را به پس‌زمینه برده)
                 // در موبایل، میکروفون را متوقف نکن تا از صدای دینگ جلوگیری شود
-                if (recognition && isRecognitionActive && !isMobileDevice()) {
-                    try {
-                        recognition.stop();
-                        isRecognitionActive = false;
-                    } catch (error) {
-                        console.error('خطا در توقف تشخیص صدا هنگام پنهان شدن صفحه:', error);
-                    }
+                if (!isMobileDevice() && recognition && isRecognitionActive) {
+                    pauseSpeechRecognition();
                 }
             } else if (document.visibilityState === 'visible') {
                 // صفحه دوباره نمایان شده است
-                if (!isRecognitionActive && !isMobileDevice()) {
-                    // تلاش برای راه‌اندازی مجدد تشخیص صدا با تأخیر
-                    setTimeout(() => {
-                        requestAllPermissions().then(granted => {
-                            if (granted) {
-                                microphoneRestartAttempts = 0; // ریست کردن شمارنده تلاش‌ها
-                                startSpeechRecognition();
-                            }
-                        });
-                    }, 1000);
+                if (!isMobileDevice() && isRecognitionPaused) {
+                    resumeSpeechRecognition();
                 }
             }
         });
@@ -712,51 +717,8 @@
             return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         }
 
-        // تابع برای درخواست مجوز میکروفون به صورت صریح
-        async function requestMicrophonePermission() {
-            // استفاده از تابع درخواست همه مجوزها
-            const result = await requestAllPermissions();
-            updateMicButtonStatus(result && isRecognitionActive);
-            return result;
-        }
-
-        // نظارت بر تغییرات مجوز
-        navigator.permissions?.query({ name: 'microphone' })
-            .then(permissionStatus => {
-                permissionStatus.onchange = function() {
-                    console.log('وضعیت مجوز میکروفون تغییر کرد به:', this.state);
-                    if (this.state === 'granted') {
-                        permissionsGranted.microphone = true;
-                        if (!isRecognitionActive) {
-                            startSpeechRecognition();
-                        }
-                        updateMicButtonStatus(isRecognitionActive);
-                    } else {
-                        permissionsGranted.microphone = false;
-                        if (isRecognitionActive && recognition) {
-                            recognition.stop();
-                        }
-                        updateMicButtonStatus(false);
-                    }
-                };
-            })
-            .catch(error => console.error('خطا در بررسی مجوز میکروفون:', error));
-            
         // درخواست مجوزها در هنگام بارگذاری صفحه
-        document.addEventListener('DOMContentLoaded', () => {
-            // فعال‌سازی خودکار میکروفون و دوربین در ابتدای بارگذاری صفحه
-            requestAllPermissions().then(granted => {
-                if (granted) {
-                    if (!camera) {
-                        camera = initializeCamera();
-                    }
-                    if (!isRecognitionActive) {
-                        startSpeechRecognition();
-                        updateMicButtonStatus(true);
-                    }
-                }
-            });
-        });
+        document.addEventListener('DOMContentLoaded', initialize);
     </script>
 </body>
 </html> 
