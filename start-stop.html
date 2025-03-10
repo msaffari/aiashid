@@ -8,13 +8,13 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/annyang/2.6.1/annyang.min.js"></script>
     <style>
         .button-container {
             display: flex;
             gap: 10px;
             justify-content: center;
             margin-top: 10px;
+            padding-bottom: 25px;
         }
 
         .game-button {
@@ -108,7 +108,7 @@
     </div>
 
     <div class="bottom-nav">
-        <a href="https://ashid.ir/" class="nav-item">
+        <a href="https://ai.ashid.ir/" class="nav-item">
             <i class="fas fa-home"></i>
             <span>خانه</span>
         </a>
@@ -152,6 +152,55 @@
         const successAudio = document.getElementById('success-audio');
         const failAudio = document.getElementById('fail-audio');
 
+        // متغیر برای ذخیره وضعیت مجوزها
+        let permissionsGranted = {
+            camera: false,
+            microphone: false
+        };
+
+        // تابع برای درخواست همه مجوزهای مورد نیاز در ابتدا
+        async function requestAllPermissions() {
+            try {
+                // درخواست همزمان دوربین و میکروفون
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: true 
+                });
+                
+                console.log('مجوز دوربین و میکروفون با موفقیت دریافت شد');
+                
+                // ذخیره وضعیت مجوزها
+                permissionsGranted.camera = true;
+                permissionsGranted.microphone = true;
+                
+                // رهاسازی منابع استریم
+                stream.getTracks().forEach(track => {
+                    // فقط ترک صوتی را متوقف کن، ترک تصویری برای دوربین لازم است
+                    if (track.kind === 'audio') {
+                        track.stop();
+                    }
+                });
+                
+                // شروع تشخیص صدا
+                if (!isRecognitionActive) {
+                    startSpeechRecognition();
+                }
+                
+                return true;
+            } catch (error) {
+                console.error('خطا در دریافت مجوزها:', error);
+                
+                // بررسی نوع خطا برای تشخیص کدام مجوز رد شده است
+                if (error.name === 'NotAllowedError') {
+                    console.error('کاربر مجوز دوربین یا میکروفون را رد کرد');
+                } else if (error.name === 'NotFoundError') {
+                    console.error('دوربین یا میکروفون در دستگاه یافت نشد');
+                }
+                
+                return false;
+            }
+        }
+
         // تابع برای پخش صدا با در نظر گرفتن خطاها
         async function playAudioSafely(audioElement) {
             try {
@@ -187,92 +236,74 @@
 
         pose.onResults(onResults);
 
-        const camera = new Camera(videoElement, {
-            onFrame: async () => {
-                await pose.send({image: videoElement});
-            },
-            width: 333,
-            height: 250
-        });
+        // راه‌اندازی دوربین فقط اگر مجوز دریافت شده باشد
+        function initializeCamera() {
+            if (permissionsGranted.camera) {
+                const cameraInstance = new Camera(videoElement, {
+                    onFrame: async () => {
+                        await pose.send({image: videoElement});
+                    },
+                    width: 333,
+                    height: 250
+                });
+                
+                cameraInstance.start();
+                return cameraInstance;
+            }
+            return null;
+        }
 
-        camera.start();
+        // متغیر دوربین را در سطح بالاتر تعریف کن
+        let camera = null;
+
+        // درخواست مجوزها و سپس راه‌اندازی دوربین و تشخیص صدا
+        requestAllPermissions().then(granted => {
+            if (granted) {
+                camera = initializeCamera();
+                startSpeechRecognition();
+            }
+        });
 
         // راه‌اندازی تشخیص صدا
         let recognition;
         let isRecognitionActive = false;
-        let isUsingAnnyang = false;
 
         function startSpeechRecognition() {
-            // اول تلاش می‌کنیم از annyang استفاده کنیم
-            if (annyang) {
-                console.log('استفاده از annyang برای تشخیص صدا');
-                isUsingAnnyang = true;
-                
-                // تعریف دستورات
-                const commands = {
-                    'آشید شروع کن': startGame,
-                    'اشید شروع کن': startGame,
-                    'آشید شروع': startGame,
-                    'آرشید شروع': startGame,
-                    'آشیت شروع': startGame,
-                    'هی شروع': startGame,
-                    'شروع کن': startGame,
-                    'با توام شروع کن': startGame
-                };
-
-                // تنظیم زبان
-                annyang.setLanguage('fa');
-                
-                // اضافه کردن دستورات
-                annyang.addCommands(commands);
-                
-                // شروع
-                annyang.start({ autoRestart: true, continuous: true });
-                
-                // رویدادها
-                annyang.addCallback('start', function() {
-                    isRecognitionActive = true;
-                    console.log('تشخیص صدا (annyang) فعال شد');
-                    updateMicrophoneStatus(true);
-                });
-                
-                annyang.addCallback('end', function() {
-                    isRecognitionActive = false;
-                    console.log('تشخیص صدا (annyang) قطع شد');
-                    updateMicrophoneStatus(false);
-                    // شروع مجدد خودکار
-                    if (!annyang.isListening()) {
-                        annyang.start();
-                    }
-                });
-                
-                annyang.addCallback('error', function(error) {
-                    console.error('خطا در تشخیص صدا (annyang):', error);
-                    updateMicrophoneStatus(false);
-                });
-
-                return;
-            }
-
-            // اگر annyang در دسترس نبود، از Web Speech API استفاده می‌کنیم
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) {
                 console.warn('مرورگر شما از تشخیص صدا پشتیبانی نمی‌کند');
-                alert('متأسفانه مرورگر شما از تشخیص صدا پشتیبانی نمی‌کند');
+                showBrowserWarning();
                 return;
             }
 
             if (isRecognitionActive) return;
-
+            
+            // اگر مجوز میکروفون دریافت نشده، ابتدا آن را درخواست کن
+            if (!permissionsGranted.microphone) {
+                requestAllPermissions().then(granted => {
+                    if (granted) {
+                        initializeSpeechRecognition();
+                    }
+                });
+                return;
+            }
+            
+            initializeSpeechRecognition();
+        }
+        
+        // جداسازی راه‌اندازی تشخیص صدا از درخواست مجوز
+        function initializeSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            
             recognition = new SpeechRecognition();
             recognition.continuous = true;
             recognition.interimResults = false;
             recognition.lang = 'fa-IR';
+            recognition.maxAlternatives = 1;
 
             recognition.onstart = function() {
                 isRecognitionActive = true;
                 console.log('تشخیص صدا فعال شد');
-                updateMicrophoneStatus(true);
             };
 
             recognition.onresult = function(event) {
@@ -287,6 +318,7 @@
                     command.includes('آشیت شروع') ||
                     command.includes('هی شروع') ||
                     command.includes('شروع کن') ||
+                    command.includes('شروع') ||
                     command.includes('با توام شروع کن')) {
                     startGame();
                 }
@@ -294,72 +326,129 @@
 
             recognition.onerror = function(event) {
                 console.error('خطا در تشخیص صدا:', event.error);
-                if (event.error !== 'no-speech') {
-                    restartSpeechRecognition();
+                isRecognitionActive = false;
+                
+                // فقط در صورت خطاهای خاص، تشخیص صدا را مجدداً راه‌اندازی کنید
+                if (event.error === 'network' || event.error === 'service-not-allowed') {
+                    setTimeout(() => restartSpeechRecognition(), 3000);
                 }
-                updateMicrophoneStatus(false);
             };
 
             recognition.onend = function() {
                 isRecognitionActive = false;
                 console.log('تشخیص صدا قطع شد، در حال شروع مجدد...');
-                updateMicrophoneStatus(false);
-                restartSpeechRecognition();
+                
+                // تأخیر بیشتر قبل از راه‌اندازی مجدد
+                setTimeout(() => restartSpeechRecognition(), 2000);
             };
 
             try {
                 recognition.start();
             } catch (error) {
                 console.error('خطا در شروع تشخیص صدا:', error);
-                updateMicrophoneStatus(false);
+                isRecognitionActive = false;
+                
+                // تلاش مجدد با تأخیر بیشتر در صورت خطا
+                setTimeout(() => restartSpeechRecognition(), 3000);
             }
         }
 
-        function restartSpeechRecognition() {
-            if (isUsingAnnyang) {
-                if (annyang && !annyang.isListening()) {
-                    setTimeout(() => annyang.start(), 1000);
-                }
-                return;
-            }
+        function showBrowserWarning() {
+            let warningDiv = document.createElement('div');
+            warningDiv.style.position = 'fixed';
+            warningDiv.style.top = '0';
+            warningDiv.style.left = '0';
+            warningDiv.style.right = '0';
+            warningDiv.style.backgroundColor = '#FFA500';
+            warningDiv.style.color = 'white';
+            warningDiv.style.padding = '10px';
+            warningDiv.style.textAlign = 'center';
+            warningDiv.style.zIndex = '1000';
+            warningDiv.style.fontFamily = 'IRANYekan, Tahoma, sans-serif';
+            warningDiv.textContent = '⚠️ جهت اجرای بازی با فرمان صوتی از مرورگر گوگل کروم استفاده کنید';
+            document.body.appendChild(warningDiv);
 
-            if (recognition) {
-                setTimeout(() => {
-                    try {
-                        recognition.start();
-                    } catch (error) {
-                        console.error('خطا در شروع مجدد تشخیص صدا:', error);
-                        updateMicrophoneStatus(false);
-                    }
-                }, 1000);
+            // تنظیم حاشیه برای هدر تا با پیام هشدار همپوشانی نداشته باشد
+            document.querySelector('.header').style.marginTop = '40px';
+        }
+
+        function restartSpeechRecognition() {
+            if (recognition && !isRecognitionActive && permissionsGranted.microphone) {
+                try {
+                    recognition.start();
+                } catch (error) {
+                    console.error('خطا در شروع مجدد تشخیص صدا:', error);
+                    
+                    // تلاش مجدد با تأخیر بیشتر در صورت خطا
+                    setTimeout(() => restartSpeechRecognition(), 5000);
+                }
             }
         }
 
         function updateMicrophoneStatus(isActive) {
-            const micStatusText = isActive ? '🎤 میکروفون فعال' : '🎤 میکروفون غیرفعال';
-            const micStatusColor = isActive ? '#4CAF50' : '#f44336';
-            
-            let micStatus = document.getElementById('mic-status');
-            if (!micStatus) {
-                micStatus = document.createElement('div');
-                micStatus.id = 'mic-status';
-                micStatus.style.position = 'fixed';
-                micStatus.style.top = '10px';
-                micStatus.style.left = '10px';
-                micStatus.style.padding = '5px 10px';
-                micStatus.style.borderRadius = '5px';
-                micStatus.style.fontSize = '14px';
-                micStatus.style.zIndex = '1000';
-                document.body.appendChild(micStatus);
+            // حذف کامل نشانگر میکروفون بالای صفحه
+            const existingMicStatus = document.getElementById('mic-status');
+            if (existingMicStatus) {
+                existingMicStatus.remove();
             }
-            
-            micStatus.textContent = micStatusText;
-            micStatus.style.backgroundColor = micStatusColor;
-            micStatus.style.color = 'white';
         }
 
-        // شروع تشخیص صدا
-        startSpeechRecognition();
+        // تابع برای درخواست مجوز میکروفون به صورت صریح
+        async function requestMicrophonePermission() {
+            // استفاده از تابع درخواست همه مجوزها
+            return await requestAllPermissions();
+        }
+
+        // نظارت بر تغییرات مجوز
+        navigator.permissions?.query({ name: 'microphone' })
+            .then(permissionStatus => {
+                permissionStatus.onchange = function() {
+                    console.log('وضعیت مجوز میکروفون تغییر کرد به:', this.state);
+                    if (this.state === 'granted') {
+                        permissionsGranted.microphone = true;
+                        if (!isRecognitionActive) {
+                            startSpeechRecognition();
+                        }
+                    } else {
+                        permissionsGranted.microphone = false;
+                        if (isRecognitionActive && recognition) {
+                            recognition.stop();
+                        }
+                    }
+                };
+            })
+            .catch(error => console.error('خطا در بررسی مجوز میکروفون:', error));
+
+        // درخواست مجوزها در هنگام بارگذاری صفحه
+        document.addEventListener('DOMContentLoaded', requestAllPermissions);
+
+        // اضافه کردن دکمه برای فعال‌سازی مجدد میکروفون
+        function createMicrophoneButton() {
+            const micButton = document.createElement('button');
+            micButton.textContent = '🎤 فعال‌سازی میکروفون';
+            micButton.style.position = 'fixed';
+            micButton.style.bottom = '80px';
+            micButton.style.left = '10px';
+            micButton.style.padding = '8px 12px';
+            micButton.style.backgroundColor = '#4CAF50';
+            micButton.style.color = 'white';
+            micButton.style.border = 'none';
+            micButton.style.borderRadius = '5px';
+            micButton.style.cursor = 'pointer';
+            micButton.style.zIndex = '1000';
+            micButton.style.fontFamily = 'IRANYekan, Tahoma, sans-serif';
+            
+            micButton.onclick = async function() {
+                const permissionGranted = await requestAllPermissions();
+                if (permissionGranted && !isRecognitionActive) {
+                    startSpeechRecognition();
+                }
+            };
+            
+            document.body.appendChild(micButton);
+        }
+        
+        createMicrophoneButton();
 
         function onResults(results) {
             lastResults = results;
@@ -499,17 +588,57 @@
 
         // توقف دوربین، ویدیو و صداها هنگام خروج از صفحه
         window.addEventListener('beforeunload', () => {
-            camera.stop();
-            demoVideo.pause();
-            if (isUsingAnnyang && annyang) {
-                annyang.abort();
-            } else if (recognition) {
-                recognition.stop();
+            if (camera) {
+                camera.stop();
             }
+            demoVideo.pause();
+            if (recognition) {
+                try {
+                    recognition.stop();
+                    isRecognitionActive = false;
+                } catch (error) {
+                    console.error('خطا در توقف تشخیص صدا:', error);
+                }
+            }
+            
             // توقف تمام صداها
             [startAudio, jumpAudio, stopAudio, successAudio, failAudio].forEach(audio => {
-                if (audio) audio.pause();
+                if (audio) {
+                    audio.pause();
+                    audio.currentTime = 0;
+                }
             });
+            
+            // پاکسازی تایمرها
+            clearTimeout(gameTimeout);
+        });
+        
+        // مدیریت حالت‌های مختلف فعال/غیرفعال شدن صفحه
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                // صفحه پنهان شده است (کاربر به تب دیگری رفته یا برنامه را به پس‌زمینه برده)
+                if (recognition && isRecognitionActive) {
+                    try {
+                        recognition.stop();
+                        isRecognitionActive = false;
+                        updateMicrophoneStatus(false);
+                    } catch (error) {
+                        console.error('خطا در توقف تشخیص صدا هنگام پنهان شدن صفحه:', error);
+                    }
+                }
+            } else if (document.visibilityState === 'visible') {
+                // صفحه دوباره نمایان شده است
+                if (!isRecognitionActive) {
+                    // تلاش برای راه‌اندازی مجدد تشخیص صدا با تأخیر
+                    setTimeout(() => {
+                        requestAllPermissions().then(granted => {
+                            if (granted) {
+                                startSpeechRecognition();
+                            }
+                        });
+                    }, 1000);
+                }
+            }
         });
     </script>
 </body>
